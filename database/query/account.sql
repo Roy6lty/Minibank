@@ -48,6 +48,9 @@ WHERE
 AND
     (sqlc.narg(account_type)::text IS NULL
         OR account_type = sqlc.narg(account_type))
+AND
+    (sqlc.narg(customer_id)::uuid IS NULL
+        OR customer_id = sqlc.narg(customer_id))
 ORDER BY created_at DESC
 LIMIT sqlc.arg(limit_count)
 OFFSET sqlc.arg(offset_count);
@@ -55,7 +58,8 @@ OFFSET sqlc.arg(offset_count);
 
 -- name: UpdateAccountByAccountNumber :one
 UPDATE accounts
-SET status = $1,
+SET status = sqlc.arg(new_status),
     updated_at = NOW()
-WHERE account_number = $2
+WHERE account_number = sqlc.arg(account_number)
+  AND status = sqlc.arg(current_status)
 RETURNING *;

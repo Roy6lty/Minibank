@@ -66,6 +66,7 @@ type TransferRepository interface {
 	UpdateTransfers(
 		ctx context.Context,
 		id pgtype.UUID,
+		currentStatus string,
 		status string,
 	) (db.Transfer, error)
 }
@@ -173,10 +174,12 @@ func (t *transferRepository) GetByAccountID(
 func (t *transferRepository) UpdateTransfers(
 	ctx context.Context,
 	id pgtype.UUID,
+	currentStatus string,
 	status string,
 ) (db.Transfer, error) {
 	return t.queries.UpdateTransferStatus(ctx, db.UpdateTransferStatusParams{
-		ID:     id,
-		Status: status,
+		NewStatus:     status,
+		ID:            id,
+		CurrentStatus: currentStatus,
 	})
 }

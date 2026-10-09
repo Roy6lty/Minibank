@@ -91,7 +91,8 @@ OFFSET $3;
 -- name: UpdateTransferStatus :one
 UPDATE transfers
 SET
-    status = $2,
+    status = sqlc.arg(new_status),
     updated_at = NOW()
-WHERE id = $1
+WHERE id = sqlc.arg(id)
+  AND status = sqlc.arg(current_status)
 RETURNING *;

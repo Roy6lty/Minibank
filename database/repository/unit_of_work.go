@@ -8,9 +8,12 @@ import (
 )
 
 type Repositories struct {
-	Accounts  AccountRepository
-	Transfers TransferRepository
-	Ledger    LedgerRepository
+	Accounts      AccountRepository
+	Customers     CustomerRepository
+	Transfers     TransferRepository
+	Ledger        LedgerRepository
+	Users         UserRepository
+	RefreshTokens RefreshTokenRepository
 }
 
 type UnitOfWork interface {
@@ -41,9 +44,12 @@ func (u *unitOfWork) WithinTx(
 
 	queries := db.New(tx)
 	repos := Repositories{
-		Accounts:  NewAccountRepository(queries),
-		Transfers: NewTransferRepository(queries),
-		Ledger:    NewLedgerRepository(queries),
+		Accounts:      NewAccountRepository(queries),
+		Customers:     NewCustomerRepository(queries),
+		Transfers:     NewTransferRepository(queries),
+		Ledger:        NewLedgerRepository(queries),
+		Users:         NewUserRepository(queries),
+		RefreshTokens: NewRefreshTokenRepository(queries),
 	}
 
 	if err := work(repos); err != nil {

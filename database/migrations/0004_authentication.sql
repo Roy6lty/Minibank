@@ -1,3 +1,5 @@
+-- +goose Up
+
 CREATE TABLE users (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     customer_id UUID NOT NULL UNIQUE REFERENCES customers(id) ON DELETE CASCADE,
@@ -26,3 +28,8 @@ CREATE INDEX idx_refresh_tokens_user_id
 
 CREATE INDEX idx_refresh_tokens_expires_at
     ON refresh_tokens(expires_at);
+
+-- +goose Down
+
+DROP TABLE refresh_tokens;
+DROP TABLE users;

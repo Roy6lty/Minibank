@@ -20,13 +20,6 @@ WHERE id = $1
 LIMIT 1;
 
 
--- name: GetTransferForPosting :one
-SELECT *
-FROM transfers
-WHERE id = $1
-FOR UPDATE;
-
-
 -- name: GetTransferByReference :one
 SELECT *
 FROM transfers
@@ -95,4 +88,13 @@ SET
     updated_at = NOW()
 WHERE id = sqlc.arg(id)
   AND status = sqlc.arg(current_status)
+RETURNING *;
+
+-- name: CompletePendingTransfer :one
+UPDATE transfers
+SET
+    status = 'COMPLETED',
+    updated_at = NOW()
+WHERE id = $1
+  AND status = 'PENDING'
 RETURNING *;

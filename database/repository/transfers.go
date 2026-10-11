@@ -18,11 +18,6 @@ type TransferRepository interface {
 		id pgtype.UUID,
 	) (db.Transfer, error)
 
-	GetForPosting(
-		ctx context.Context,
-		id pgtype.UUID,
-	) (db.Transfer, error)
-
 	GetTransfersByReference(
 		ctx context.Context,
 		referenceID string,
@@ -71,11 +66,20 @@ type TransferRepository interface {
 	) (db.Transfer, error)
 }
 
+type TransferPostingRepository interface {
+	TransferRepository
+
+	CompletePendingTransfer(
+		ctx context.Context,
+		id pgtype.UUID,
+	) (db.Transfer, error)
+}
+
 type transferRepository struct {
 	queries *db.Queries
 }
 
-func NewTransferRepository(queries *db.Queries) TransferRepository {
+func NewTransferRepository(queries *db.Queries) TransferPostingRepository {
 	return &transferRepository{queries: queries}
 }
 
@@ -91,13 +95,6 @@ func (t *transferRepository) GetByID(
 	id pgtype.UUID,
 ) (db.Transfer, error) {
 	return t.queries.GetTransfer(ctx, id)
-}
-
-func (t *transferRepository) GetForPosting(
-	ctx context.Context,
-	id pgtype.UUID,
-) (db.Transfer, error) {
-	return t.queries.GetTransferForPosting(ctx, id)
 }
 
 func (t *transferRepository) GetTransfersByReference(
@@ -182,4 +179,11 @@ func (t *transferRepository) UpdateTransfers(
 		ID:            id,
 		CurrentStatus: currentStatus,
 	})
+}
+
+func (t *transferRepository) CompletePendingTransfer(
+	ctx context.Context,
+	id pgtype.UUID,
+) (db.Transfer, error) {
+	return t.queries.CompletePendingTransfer(ctx, id)
 }

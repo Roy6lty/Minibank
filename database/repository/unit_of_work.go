@@ -2,18 +2,20 @@ package repository
 
 import (
 	"context"
+	"time"
 
 	db "github.com/Roy6lty/minibank/internal/sqlc"
 	"github.com/jackc/pgx/v5"
 )
 
 type Repositories struct {
-	Accounts      AccountRepository
-	Customers     CustomerRepository
-	Transfers     TransferRepository
-	Ledger        LedgerRepository
-	Users         UserRepository
-	RefreshTokens RefreshTokenRepository
+	Accounts        AccountRepository
+	Customers       CustomerRepository
+	Transfers       TransferRepository
+	TransferPosting TransferPostingRepository
+	Ledger          LedgerRepository
+	Users           UserRepository
+	RefreshTokens   RefreshTokenRepository
 }
 
 type UnitOfWork interface {
@@ -40,16 +42,22 @@ func (u *unitOfWork) WithinTx(
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback(ctx)
+	defer func() {
+		rollbackCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = tx.Rollback(rollbackCtx)
+	}()
 
 	queries := db.New(tx)
+	transferRepo := NewTransferRepository(queries)
 	repos := Repositories{
-		Accounts:      NewAccountRepository(queries),
-		Customers:     NewCustomerRepository(queries),
-		Transfers:     NewTransferRepository(queries),
-		Ledger:        NewLedgerRepository(queries),
-		Users:         NewUserRepository(queries),
-		RefreshTokens: NewRefreshTokenRepository(queries),
+		Accounts:        NewAccountRepository(queries),
+		Customers:       NewCustomerRepository(queries),
+		Transfers:       transferRepo,
+		TransferPosting: transferRepo,
+		Ledger:          NewLedgerRepository(queries),
+		Users:           NewUserRepository(queries),
+		RefreshTokens:   NewRefreshTokenRepository(queries),
 	}
 
 	if err := work(repos); err != nil {

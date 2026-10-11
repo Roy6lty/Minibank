@@ -1,3 +1,5 @@
+-- +goose Up
+
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
 CREATE TABLE customers (
@@ -154,23 +156,11 @@ CREATE INDEX idx_ledger_entries_account_id
 CREATE INDEX idx_ledger_entries_created_at
     ON ledger_entries(created_at);
 
- CREATE INDEX idx_accounts_customer_id
-     ON accounts(customer_id);
+-- +goose Down
 
- CREATE INDEX idx_transfers_source_account_id
-     ON transfers(source_account_id);
-
- CREATE INDEX idx_transfers_destination_account_id
-     ON transfers(destination_account_id);
-
- CREATE INDEX idx_transfers_created_at
-     ON transfers(created_at);
-
- CREATE INDEX idx_ledger_entries_transfer_id
-     ON ledger_entries(transfer_id);
-
- CREATE INDEX idx_ledger_entries_account_id
-     ON ledger_entries(account_id);
-
- CREATE INDEX idx_ledger_entries_created_at
-     ON ledger_entries(created_at);
+DROP TABLE ledger_entries;
+DROP TABLE transactions;
+DROP TABLE transfers;
+DROP TABLE accounts;
+DROP TABLE customers;
+DROP EXTENSION IF EXISTS pgcrypto;

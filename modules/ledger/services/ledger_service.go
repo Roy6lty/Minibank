@@ -6,7 +6,6 @@ import (
 	"fmt"
 
 	db "github.com/Roy6lty/minibank/internal/sqlc"
-	accountService "github.com/Roy6lty/minibank/modules/account/services"
 	authModels "github.com/Roy6lty/minibank/modules/auth"
 	ledgerModels "github.com/Roy6lty/minibank/modules/ledger"
 	transferModels "github.com/Roy6lty/minibank/modules/transfers"
@@ -51,13 +50,13 @@ type TransferPostingService interface {
 }
 
 type ledgerService struct {
-	accounts  accountService.AccountService
+	accounts  AccountPort
 	transfers TransferPort
 	ledger    LedgerPort
 }
 
 func NewLedgerService(
-	accounts accountService.AccountService,
+	accounts AccountPort,
 	transfers TransferPort,
 	ledger LedgerPort,
 ) LedgerService {
@@ -65,7 +64,7 @@ func NewLedgerService(
 }
 
 func NewTransferPostingService(
-	accounts accountService.AccountService,
+	accounts AccountPort,
 	transfers TransferPort,
 	ledger LedgerPort,
 ) TransferPostingService {
@@ -73,7 +72,7 @@ func NewTransferPostingService(
 }
 
 func newLedgerService(
-	accounts accountService.AccountService,
+	accounts AccountPort,
 	transfers TransferPort,
 	ledger LedgerPort,
 ) *ledgerService {

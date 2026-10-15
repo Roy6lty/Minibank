@@ -13,10 +13,12 @@ Implemented:
 - Ownership and permission checks
 - PostgreSQL transactions for financial mutations
 - Redis-backed rate limiting and login-attempt protection
+- Vault-backed secret loading in Docker Compose
 - Strict JSON request validation
 - 1 MiB maximum JSON request body size
 - Structured JSON logging with sensitive-data redaction
 - Request IDs through the `X-Request-ID` header
+- Append-only PostgreSQL audit events for business and security activity
 - Configurable database and HTTP timeouts
 - Graceful HTTP server shutdown
 
@@ -25,7 +27,7 @@ Still pending:
 - PostgreSQL and Redis high-availability topology
 - Health and readiness endpoints
 - A bundled migration command
-- Docker and CI configuration
+- CI configuration
 - PostgreSQL/Redis integration and failure tests
 - Deposits, withdrawals, fees, interest, and reversals
 
@@ -41,7 +43,8 @@ database/
   query/                   SQL queries used by sqlc
   repository/              Repository and transaction boundaries
 internal/
-  httpx/                   JSON decoding, size limits, and validation
+	audit/                  Audit event model, recorder, and request context
+	httpx/                   JSON decoding, size limits, and validation
   logging/                 Structured logging and redaction
   middleware/              Recovery and request logging
   ratelimit/               Redis-backed rate limiting
@@ -60,6 +63,7 @@ modules/
 - Go `1.27.0` or newer
 - PostgreSQL
 - Redis
+- HashiCorp Vault when `VAULT_ENABLED=true`
 - Goose, or another migration tool that supports Goose-formatted migrations
 
 ## Configuration
@@ -86,6 +90,11 @@ REDIS_DB=0
 
 ACCESS_SECRET=replace-with-a-long-random-secret
 REFRESH_SECRET=replace-with-a-different-long-random-secret
+
+VAULT_ENABLED=false
+VAULT_ADDR=http://localhost:8200
+VAULT_TOKEN=dev-root-token
+VAULT_SECRET_PATH=minibank
 ```
 
 The remaining settings control database pool limits, connection/query timeouts, Redis timeouts, HTTP timeouts, and shutdown behavior. See `.env.example` for defaults.
@@ -122,6 +131,29 @@ Start PostgreSQL and Redis, apply the migrations, then run the API:
 ```bash
 go mod download
 go run ./cmd
+```
+
+## Running with Docker Compose
+
+Copy the example environment file and replace the development secrets before using this outside local development:
+
+```bash
+cp .env.example .env
+docker compose up --build
+```
+
+Compose starts PostgreSQL, Redis, and a development Vault server. It seeds the Vault KV secret at `secret/minibank`, applies the Goose migrations, and then starts the API at `http://localhost:8080`. The API loads database, Redis, and token secrets from Vault during startup.
+
+Stop the services with:
+
+```bash
+docker compose down
+```
+
+To remove the persisted PostgreSQL and Redis volumes as well:
+
+```bash
+docker compose down -v
 ```
 
 The server listens on:
@@ -227,6 +259,12 @@ The API configures `log/slog` with a JSON handler writing to stderr. Request log
 Request bodies, query values, authorization headers, cookies, raw paths, and client IP addresses are not logged. Known credentials, tokens, secrets, PII, account identifiers, and sensitive error text are redacted as `[REDACTED]`.
 
 Clients may provide a safe `X-Request-ID` value. If omitted or invalid, the server generates one and returns it in the response header.
+
+## Audit Trail
+
+Audit events are stored in the append-only `audit_events` table. Financial mutations write transfer and transaction lifecycle events in the same PostgreSQL transaction as the business change. Authentication and authorization events include request IDs and actor IDs when known.
+
+Audit details do not contain passwords, tokens, authorization headers, raw login identifiers, or other unnecessary sensitive values. Database triggers reject updates and deletes from the audit table.
 
 ## Development Checks
 

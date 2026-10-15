@@ -2,6 +2,7 @@
 
 -- name: CreateTransaction :one
 INSERT INTO transactions (
+    transfer_id,
     reference,
     transaction_type,
     status,
@@ -15,7 +16,8 @@ VALUES (
     $3,
     $4,
     $5,
-    $6
+    $6,
+    $7
 )
 RETURNING *;
 

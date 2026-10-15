@@ -5,9 +5,11 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/Roy6lty/minibank/internal/audit"
 	db "github.com/Roy6lty/minibank/internal/sqlc"
 	authModels "github.com/Roy6lty/minibank/modules/auth"
 	ledgerModels "github.com/Roy6lty/minibank/modules/ledger"
+	transactionModels "github.com/Roy6lty/minibank/modules/transactions"
 	transferModels "github.com/Roy6lty/minibank/modules/transfers"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -50,36 +52,45 @@ type TransferPostingService interface {
 }
 
 type ledgerService struct {
-	accounts  AccountPort
-	transfers TransferPort
-	ledger    LedgerPort
+	accounts     AccountPort
+	transfers    TransferPort
+	ledger       LedgerPort
+	transactions TransactionPort
+	audits       audit.Recorder
 }
 
 func NewLedgerService(
 	accounts AccountPort,
 	transfers TransferPort,
 	ledger LedgerPort,
+	transactions TransactionPort,
 ) LedgerService {
-	return newLedgerService(accounts, transfers, ledger)
+	return newLedgerService(accounts, transfers, ledger, transactions, nil)
 }
 
 func NewTransferPostingService(
 	accounts AccountPort,
 	transfers TransferPort,
 	ledger LedgerPort,
+	transactions TransactionPort,
+	audits audit.Recorder,
 ) TransferPostingService {
-	return newLedgerService(accounts, transfers, ledger)
+	return newLedgerService(accounts, transfers, ledger, transactions, audits)
 }
 
 func newLedgerService(
 	accounts AccountPort,
 	transfers TransferPort,
 	ledger LedgerPort,
+	transactions TransactionPort,
+	audits audit.Recorder,
 ) *ledgerService {
 	return &ledgerService{
-		accounts:  accounts,
-		transfers: transfers,
-		ledger:    ledger,
+		accounts:     accounts,
+		transfers:    transfers,
+		ledger:       ledger,
+		transactions: transactions,
+		audits:       audits,
 	}
 }
 
@@ -89,6 +100,18 @@ func toPgUUID(id uuid.UUID) pgtype.UUID {
 
 func uuidFromPgUUID(id pgtype.UUID) uuid.UUID {
 	return uuid.UUID(id.Bytes)
+}
+
+func actorUserID(ctx context.Context) uuid.UUID {
+	userID, _ := audit.ActorUserID(ctx)
+	return userID
+}
+
+func (l *ledgerService) recordAudit(ctx context.Context, event audit.Event) error {
+	if l.audits == nil {
+		return fmt.Errorf("audit repository is not configured")
+	}
+	return l.audits.Record(ctx, event)
 }
 
 func (l *ledgerService) GetBalance(
@@ -127,13 +150,47 @@ func (l *ledgerService) CreateAndPostTransfer(
 	if err != nil {
 		return db.Transfer{}, fmt.Errorf("create transfer: %w", err)
 	}
+	if err := l.recordAudit(ctx, audit.Event{
+		EventType:    audit.EventTransferCreated,
+		Outcome:      audit.OutcomeSuccess,
+		ActorUserID:  actorUserID(ctx),
+		RequestID:    audit.RequestID(ctx),
+		ResourceType: audit.ResourceTransfer,
+		ResourceID:   uuidFromPgUUID(transfer.ID),
+	}); err != nil {
+		return db.Transfer{}, fmt.Errorf("record transfer creation: %w", err)
+	}
 
-	return l.postTransfer(ctx, transfer)
+	transaction, err := l.transactions.Create(ctx, db.CreateTransactionParams{
+		TransferID:      transfer.ID,
+		Reference:       transfer.Reference,
+		TransactionType: transactionModels.TransactionTypeTransfer,
+		Status:          string(transactionModels.TransactionsStatusPending),
+		Amount:          transfer.Amount,
+		Currency:        transfer.Currency,
+		Description:     transfer.Description,
+	})
+	if err != nil {
+		return db.Transfer{}, fmt.Errorf("create transaction record: %w", err)
+	}
+	if err := l.recordAudit(ctx, audit.Event{
+		EventType:    audit.EventTransactionCreated,
+		Outcome:      audit.OutcomeSuccess,
+		ActorUserID:  actorUserID(ctx),
+		RequestID:    audit.RequestID(ctx),
+		ResourceType: audit.ResourceTransaction,
+		ResourceID:   uuidFromPgUUID(transaction.ID),
+	}); err != nil {
+		return db.Transfer{}, fmt.Errorf("record transaction creation: %w", err)
+	}
+
+	return l.postTransfer(ctx, transfer, transaction.ID)
 }
 
 func (l *ledgerService) postTransfer(
 	ctx context.Context,
 	transfer db.Transfer,
+	transactionID pgtype.UUID,
 ) (db.Transfer, error) {
 	if transfer.Status != string(transferModels.TransferStatusPending) {
 		return db.Transfer{}, fmt.Errorf("transfer has already been posted or is not pending")
@@ -198,6 +255,35 @@ func (l *ledgerService) postTransfer(
 	)
 	if err != nil {
 		return db.Transfer{}, fmt.Errorf("complete transfer: %w", err)
+	}
+	if _, err := l.transactions.UpdateTransactionStatus(
+		ctx,
+		transactionID,
+		string(transactionModels.TransactionsStatusCompleted),
+	); err != nil {
+		return db.Transfer{}, fmt.Errorf("complete transaction record: %w", err)
+	}
+	if err := l.recordAudit(ctx, audit.Event{
+		EventType:    audit.EventTransferStatusUpdated,
+		Outcome:      audit.OutcomeSuccess,
+		ActorUserID:  actorUserID(ctx),
+		RequestID:    audit.RequestID(ctx),
+		ResourceType: audit.ResourceTransfer,
+		ResourceID:   uuidFromPgUUID(completed.ID),
+		Details:      audit.StatusDetails(string(transferModels.TransferStatusCompleted)),
+	}); err != nil {
+		return db.Transfer{}, fmt.Errorf("record transfer completion: %w", err)
+	}
+	if err := l.recordAudit(ctx, audit.Event{
+		EventType:    audit.EventTransactionStatusUpdated,
+		Outcome:      audit.OutcomeSuccess,
+		ActorUserID:  actorUserID(ctx),
+		RequestID:    audit.RequestID(ctx),
+		ResourceType: audit.ResourceTransaction,
+		ResourceID:   uuidFromPgUUID(transactionID),
+		Details:      audit.StatusDetails(string(transactionModels.TransactionsStatusCompleted)),
+	}); err != nil {
+		return db.Transfer{}, fmt.Errorf("record transaction completion: %w", err)
 	}
 	return completed, nil
 }

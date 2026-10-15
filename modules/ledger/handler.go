@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/Roy6lty/minibank/internal/httpx"
+	"github.com/Roy6lty/minibank/internal/logging"
 	db "github.com/Roy6lty/minibank/internal/sqlc"
 	appModels "github.com/Roy6lty/minibank/models"
 	authModels "github.com/Roy6lty/minibank/modules/auth"
@@ -44,7 +45,7 @@ func (h *LedgerHandler) GetBalance(w http.ResponseWriter, r *http.Request) {
 
 	balance, err := h.service.GetBalance(r.Context(), principal, accountID)
 	if err != nil {
-		writeLedgerError(w, err)
+		writeLedgerError(w, r, err)
 		return
 	}
 
@@ -67,7 +68,7 @@ func (h *LedgerHandler) GetEntryByID(w http.ResponseWriter, r *http.Request) {
 
 	entry, err := h.service.GetEntryByID(r.Context(), principal, entryID)
 	if err != nil {
-		writeLedgerError(w, err)
+		writeLedgerError(w, r, err)
 		return
 	}
 
@@ -90,7 +91,7 @@ func (h *LedgerHandler) GetEntriesByTransfer(w http.ResponseWriter, r *http.Requ
 
 	entries, err := h.service.GetEntriesByTransfer(r.Context(), principal, transferID)
 	if err != nil {
-		writeLedgerError(w, err)
+		writeLedgerError(w, r, err)
 		return
 	}
 
@@ -113,13 +114,13 @@ func (h *LedgerHandler) GetEntriesByAccount(w http.ResponseWriter, r *http.Reque
 
 	offset, limit, err := parseLedgerPagination(r)
 	if err != nil {
-		writeLedgerError(w, err)
+		writeLedgerError(w, r, err)
 		return
 	}
 
 	entries, err := h.service.GetEntriesByAccount(r.Context(), principal, accountID, offset, limit)
 	if err != nil {
-		writeLedgerError(w, err)
+		writeLedgerError(w, r, err)
 		return
 	}
 
@@ -133,7 +134,7 @@ func (h *LedgerHandler) GetEntriesByAccount(w http.ResponseWriter, r *http.Reque
 func parseLedgerUUID(w http.ResponseWriter, r *http.Request, name string) (uuid.UUID, bool) {
 	id, err := uuid.Parse(chi.URLParam(r, name))
 	if err != nil {
-		writeLedgerError(w, fmt.Errorf("invalid %s: %w", name, err))
+		writeLedgerError(w, r, fmt.Errorf("invalid %s: %w", name, err))
 		return uuid.Nil, false
 	}
 
@@ -169,7 +170,7 @@ func parseLedgerPagination(r *http.Request) (int32, int32, error) {
 	return offset, limit, nil
 }
 
-func writeLedgerError(w http.ResponseWriter, err error) {
+func writeLedgerError(w http.ResponseWriter, r *http.Request, err error) {
 	status := http.StatusInternalServerError
 	if errors.Is(err, authModels.ErrForbidden) {
 		status = http.StatusForbidden
@@ -182,7 +183,7 @@ func writeLedgerError(w http.ResponseWriter, err error) {
 		status = http.StatusBadRequest
 	}
 
-	slog.Error("ledger request failed", "error", err)
+	slog.ErrorContext(r.Context(), "ledger request failed", logging.Error(err))
 	http.Error(w, http.StatusText(status), status)
 }
 

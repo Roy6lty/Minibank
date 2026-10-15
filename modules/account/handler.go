@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/Roy6lty/minibank/internal/httpx"
+	"github.com/Roy6lty/minibank/internal/logging"
 	appModels "github.com/Roy6lty/minibank/models"
 	authModels "github.com/Roy6lty/minibank/modules/auth"
 	"github.com/go-chi/chi/v5"
@@ -40,7 +41,7 @@ func (h *AccountHandler) CreateAccount(w http.ResponseWriter, r *http.Request) {
 
 	account, err := h.service.CreateAccount(r.Context(), principal, request)
 	if err != nil {
-		writeAccountError(w, err)
+		writeAccountError(w, r, err)
 		return
 	}
 
@@ -61,7 +62,7 @@ func (h *AccountHandler) GetAccountByAccountNumber(w http.ResponseWriter, r *htt
 		AccountNumber: &accountNumber,
 	})
 	if err != nil {
-		writeAccountError(w, err)
+		writeAccountError(w, r, err)
 		return
 	}
 
@@ -91,7 +92,7 @@ func (h *AccountHandler) SearchAccounts(w http.ResponseWriter, r *http.Request) 
 
 	accounts, err := h.service.SearchAccounts(r.Context(), principal, request)
 	if err != nil {
-		writeAccountError(w, err)
+		writeAccountError(w, r, err)
 		return
 	}
 
@@ -114,7 +115,7 @@ func (h *AccountHandler) UpdateAccount(w http.ResponseWriter, r *http.Request) {
 
 	request.AccountNumber = chi.URLParam(r, "accountNumber")
 	if err := h.service.ArchiveAccount(r.Context(), principal, request); err != nil {
-		writeAccountError(w, err)
+		writeAccountError(w, r, err)
 		return
 	}
 
@@ -124,7 +125,7 @@ func (h *AccountHandler) UpdateAccount(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func writeAccountError(w http.ResponseWriter, err error) {
+func writeAccountError(w http.ResponseWriter, r *http.Request, err error) {
 	status := http.StatusInternalServerError
 	if errors.Is(err, authModels.ErrForbidden) {
 		status = http.StatusForbidden
@@ -138,7 +139,7 @@ func writeAccountError(w http.ResponseWriter, err error) {
 		status = http.StatusConflict
 	}
 
-	slog.Error("account request failed", "error", err)
+	slog.ErrorContext(r.Context(), "account request failed", logging.Error(err))
 	http.Error(w, http.StatusText(status), status)
 }
 

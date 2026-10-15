@@ -27,9 +27,9 @@ const (
 )
 
 type CreateAccountRequest struct {
-	CustomerID  string      `json:"customer_id"`
-	AccountType AccountType `json:"account_type"`
-	Currency    Currency    `json:"currency"`
+	CustomerID  string      `json:"customer_id" validate:"omitempty,uuid"`
+	AccountType AccountType `json:"account_type" validate:"required,oneof=SAVINGS CURRENT"`
+	Currency    Currency    `json:"currency" validate:"required,oneof=NGN USD GBP EUR"`
 }
 
 type UpdateAccountRequest struct {
@@ -67,6 +67,6 @@ type SearchRequest struct {
 }
 
 type UpdateAccountByAccountNumberRequest struct {
-	Status        AccountStatus `json:"status"`
+	Status        AccountStatus `json:"status" validate:"required,oneof=ACTIVE FROZEN CLOSED"`
 	AccountNumber string        `json:"account_number"`
 }

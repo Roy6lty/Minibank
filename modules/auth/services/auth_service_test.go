@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/Roy6lty/minibank/database/repository"
+	"github.com/Roy6lty/minibank/internal/audit"
 	"github.com/Roy6lty/minibank/internal/ratelimit"
 	db "github.com/Roy6lty/minibank/internal/sqlc"
 	authModels "github.com/Roy6lty/minibank/modules/auth"
@@ -25,6 +26,18 @@ func (f unitOfWorkFunc) WithinTx(ctx context.Context, work func(repository.Repos
 type refreshTokenRepositoryStub struct {
 	revokedHash string
 	revokeErr   error
+}
+
+type auditRecorderStub struct {
+	events []audit.Event
+}
+
+func (s *auditRecorderStub) Record(
+	_ context.Context,
+	event audit.Event,
+) error {
+	s.events = append(s.events, event)
+	return nil
 }
 
 type userRepositoryStub struct {
@@ -219,6 +232,52 @@ func TestLoginRecordsFailedAttempt(t *testing.T) {
 	}
 	if strings.Contains(tracker.lastKey, "customer@example.com") {
 		t.Fatal("login attempt tracker must not receive the raw email")
+	}
+}
+
+func TestLoginRecordsFailedAuthenticationAuditEvent(t *testing.T) {
+	passwordHash, err := bcrypt.GenerateFromPassword([]byte("correct-password"), bcrypt.MinCost)
+	if err != nil {
+		t.Fatalf("generate password hash: %v", err)
+	}
+	auditRepo := &auditRecorderStub{}
+	users := &userRepositoryStub{
+		user: db.User{
+			PasswordHash: string(passwordHash),
+			Status:       "ACTIVE",
+		},
+	}
+	service := NewAuthService(
+		unitOfWorkFunc(func(ctx context.Context, work func(repository.Repositories) error) error {
+			return work(repository.Repositories{Audit: auditRepo})
+		}),
+		users,
+		nil,
+		0,
+		0,
+		"refresh-secret",
+	)
+
+	ctx := audit.WithRequestID(context.Background(), "request-123")
+	_, err = service.Login(ctx, authModels.LoginRequest{
+		Email:    "customer@example.com",
+		Password: "wrong-password",
+	})
+	if !errors.Is(err, authModels.ErrInvalidCredentials) {
+		t.Fatalf("expected invalid credentials, got %v", err)
+	}
+	if len(auditRepo.events) != 1 {
+		t.Fatalf("expected one audit event, got %d", len(auditRepo.events))
+	}
+	event := auditRepo.events[0]
+	if event.EventType != audit.EventAuthenticationFailed || event.Outcome != audit.OutcomeFailure {
+		t.Fatalf("unexpected audit event: %+v", event)
+	}
+	if event.RequestID != "request-123" {
+		t.Fatalf("request ID was not recorded: %q", event.RequestID)
+	}
+	if event.ActorUserID != uuid.Nil {
+		t.Fatal("failed login must not identify an actor user")
 	}
 }
 

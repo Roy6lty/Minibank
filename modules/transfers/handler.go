@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/Roy6lty/minibank/internal/httpx"
+	"github.com/Roy6lty/minibank/internal/logging"
 	appModels "github.com/Roy6lty/minibank/models"
 	authModels "github.com/Roy6lty/minibank/modules/auth"
 	"github.com/go-chi/chi/v5"
@@ -42,7 +43,7 @@ func (h *TransferHandler) CreateTransfer(w http.ResponseWriter, r *http.Request)
 	}
 
 	if err := h.service.CreateTransfer(r.Context(), principal, request); err != nil {
-		writeTransferError(w, err)
+		writeTransferError(w, r, err)
 		return
 	}
 
@@ -62,7 +63,7 @@ func (h *TransferHandler) GetTransfer(w http.ResponseWriter, r *http.Request) {
 		TransferID: &id,
 	})
 	if err != nil {
-		writeTransferError(w, err)
+		writeTransferError(w, r, err)
 		return
 	}
 
@@ -83,7 +84,7 @@ func (h *TransferHandler) GetTransferByReferenceID(w http.ResponseWriter, r *htt
 		ReferenceID: &referenceID,
 	})
 	if err != nil {
-		writeTransferError(w, err)
+		writeTransferError(w, r, err)
 		return
 	}
 
@@ -97,7 +98,7 @@ func (h *TransferHandler) GetTransferByReferenceID(w http.ResponseWriter, r *htt
 func (h *TransferHandler) GetTransfers(w http.ResponseWriter, r *http.Request) {
 	offset, limit, err := parsePagination(r)
 	if err != nil {
-		writeTransferError(w, err)
+		writeTransferError(w, r, err)
 		return
 	}
 	principal, ok := transferPrincipal(w, r)
@@ -113,7 +114,7 @@ func (h *TransferHandler) GetTransfers(w http.ResponseWriter, r *http.Request) {
 		limit,
 	)
 	if err != nil {
-		writeTransferError(w, err)
+		writeTransferError(w, r, err)
 		return
 	}
 
@@ -136,7 +137,7 @@ func (h *TransferHandler) UpdateTransfer(w http.ResponseWriter, r *http.Request)
 
 	id := chi.URLParam(r, "transferID")
 	if err := h.service.UpdateTransfers(r.Context(), principal, id, request); err != nil {
-		writeTransferError(w, err)
+		writeTransferError(w, r, err)
 		return
 	}
 
@@ -175,7 +176,7 @@ func parsePagination(r *http.Request) (int32, int32, error) {
 	return offset, limit, nil
 }
 
-func writeTransferError(w http.ResponseWriter, err error) {
+func writeTransferError(w http.ResponseWriter, r *http.Request, err error) {
 	status := http.StatusInternalServerError
 	if errors.Is(err, authModels.ErrForbidden) {
 		status = http.StatusForbidden
@@ -190,7 +191,7 @@ func writeTransferError(w http.ResponseWriter, err error) {
 		status = http.StatusConflict
 	}
 
-	slog.Error("transfer request failed", "error", err)
+	slog.ErrorContext(r.Context(), "transfer request failed", logging.Error(err))
 	http.Error(w, http.StatusText(status), status)
 }
 

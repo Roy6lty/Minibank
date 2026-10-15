@@ -9,11 +9,13 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/mail"
 	"strings"
 	"time"
 
 	"github.com/Roy6lty/minibank/database/repository"
+	"github.com/Roy6lty/minibank/internal/audit"
 	"github.com/Roy6lty/minibank/internal/ratelimit"
 	db "github.com/Roy6lty/minibank/internal/sqlc"
 	authModels "github.com/Roy6lty/minibank/modules/auth"
@@ -122,13 +124,23 @@ func (a *authService) Register(
 			return fmt.Errorf("create user: %w", err)
 		}
 
+		if err := recordAuthAudit(ctx, repos.Audit, audit.Event{
+			EventType:    audit.EventAuthRegister,
+			Outcome:      audit.OutcomeSuccess,
+			RequestID:    audit.RequestID(ctx),
+			ResourceType: audit.ResourceUser,
+			ResourceID:   uuid.UUID(user.ID.Bytes),
+		}); err != nil {
+			return fmt.Errorf("record registration: %w", err)
+		}
+
 		return nil
 	})
 	if err != nil {
 		return authModels.TokenResponse{}, err
 	}
 
-	return a.issueSession(ctx, user)
+	return a.issueSession(ctx, user, "")
 }
 
 func (a *authService) Login(
@@ -154,25 +166,28 @@ func (a *authService) Login(
 		if trackerErr := a.recordLoginFailure(ctx, email); trackerErr != nil {
 			return authModels.TokenResponse{}, trackerErr
 		}
+		a.recordFailedLogin(ctx)
 		return authModels.TokenResponse{}, authModels.ErrInvalidCredentials
 	}
 	if user.Status != "ACTIVE" {
 		if trackerErr := a.recordLoginFailure(ctx, email); trackerErr != nil {
 			return authModels.TokenResponse{}, trackerErr
 		}
+		a.recordFailedLogin(ctx)
 		return authModels.TokenResponse{}, authModels.ErrInvalidCredentials
 	}
 	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(request.Password)); err != nil {
 		if trackerErr := a.recordLoginFailure(ctx, email); trackerErr != nil {
 			return authModels.TokenResponse{}, trackerErr
 		}
+		a.recordFailedLogin(ctx)
 		return authModels.TokenResponse{}, authModels.ErrInvalidCredentials
 	}
 	if err := a.resetLoginFailures(ctx, email); err != nil {
 		return authModels.TokenResponse{}, err
 	}
 
-	return a.issueSession(ctx, user)
+	return a.issueSession(ctx, user, audit.EventAuthLogin)
 }
 
 func (a *authService) checkLoginProtection(ctx context.Context, email string) error {
@@ -281,6 +296,17 @@ func (a *authService) Refresh(
 			return fmt.Errorf("revoke refresh token: %w", err)
 		}
 
+		if err := recordAuthAudit(ctx, repos.Audit, audit.Event{
+			EventType:    audit.EventAuthRefresh,
+			Outcome:      audit.OutcomeSuccess,
+			ActorUserID:  uuid.UUID(user.ID.Bytes),
+			RequestID:    audit.RequestID(ctx),
+			ResourceType: audit.ResourceUser,
+			ResourceID:   uuid.UUID(user.ID.Bytes),
+		}); err != nil {
+			return fmt.Errorf("record refresh: %w", err)
+		}
+
 		return nil
 	})
 	if err != nil {
@@ -307,7 +333,15 @@ func (a *authService) Logout(ctx context.Context, refreshToken string) error {
 
 	tokenHash := hashRefreshToken(refreshToken, a.refreshSecret)
 	if err := a.uow.WithinTx(ctx, func(repos repository.Repositories) error {
-		return repos.RefreshTokens.Revoke(ctx, tokenHash)
+		if err := repos.RefreshTokens.Revoke(ctx, tokenHash); err != nil {
+			return err
+		}
+		return recordAuthAudit(ctx, repos.Audit, audit.Event{
+			EventType:    audit.EventAuthLogout,
+			Outcome:      audit.OutcomeSuccess,
+			RequestID:    audit.RequestID(ctx),
+			ResourceType: audit.ResourceSession,
+		})
 	}); err != nil {
 		return fmt.Errorf("revoke refresh token: %w", err)
 	}
@@ -318,6 +352,7 @@ func (a *authService) Logout(ctx context.Context, refreshToken string) error {
 func (a *authService) issueSession(
 	ctx context.Context,
 	user db.User,
+	eventType string,
 ) (authModels.TokenResponse, error) {
 	refreshToken, refreshHash, err := generateRefreshToken(a.refreshSecret)
 	if err != nil {
@@ -330,7 +365,20 @@ func (a *authService) issueSession(
 			TokenHash: refreshHash,
 			ExpiresAt: pgtype.Timestamptz{Time: time.Now().Add(a.refreshTTL), Valid: true},
 		})
-		return err
+		if err != nil {
+			return err
+		}
+		if eventType == "" {
+			return nil
+		}
+		return recordAuthAudit(ctx, repos.Audit, audit.Event{
+			EventType:    eventType,
+			Outcome:      audit.OutcomeSuccess,
+			ActorUserID:  uuid.UUID(user.ID.Bytes),
+			RequestID:    audit.RequestID(ctx),
+			ResourceType: audit.ResourceUser,
+			ResourceID:   uuid.UUID(user.ID.Bytes),
+		})
 	})
 	if err != nil {
 		return authModels.TokenResponse{}, fmt.Errorf("store refresh token: %w", err)
@@ -347,6 +395,32 @@ func (a *authService) issueSession(
 		TokenType:    "Bearer",
 		ExpiresIn:    int64(a.accessTTL.Seconds()),
 	}, nil
+}
+
+func recordAuthAudit(
+	ctx context.Context,
+	recorder audit.Recorder,
+	event audit.Event,
+) error {
+	if recorder == nil {
+		return nil
+	}
+	return recorder.Record(ctx, event)
+}
+
+func (a *authService) recordFailedLogin(ctx context.Context) {
+	if a.uow == nil {
+		return
+	}
+	if err := a.uow.WithinTx(ctx, func(repos repository.Repositories) error {
+		return recordAuthAudit(ctx, repos.Audit, audit.Event{
+			EventType: audit.EventAuthenticationFailed,
+			Outcome:   audit.OutcomeFailure,
+			RequestID: audit.RequestID(ctx),
+		})
+	}); err != nil {
+		slog.ErrorContext(ctx, "record failed login audit event", "error", err)
+	}
 }
 
 func principalFromUser(user db.User) authModels.Principal {

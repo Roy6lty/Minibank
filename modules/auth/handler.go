@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/Roy6lty/minibank/internal/httpx"
+	"github.com/Roy6lty/minibank/internal/logging"
 	appModels "github.com/Roy6lty/minibank/models"
 )
 
@@ -36,7 +37,7 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 
 	tokens, err := h.service.Register(r.Context(), request)
 	if err != nil {
-		writeAuthError(w, err)
+		writeAuthError(w, r, err)
 		return
 	}
 
@@ -55,7 +56,7 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 
 	tokens, err := h.service.Login(r.Context(), request)
 	if err != nil {
-		writeAuthError(w, err)
+		writeAuthError(w, r, err)
 		return
 	}
 
@@ -74,7 +75,7 @@ func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
 
 	tokens, err := h.service.Refresh(r.Context(), request.RefreshToken)
 	if err != nil {
-		writeAuthError(w, err)
+		writeAuthError(w, r, err)
 		return
 	}
 
@@ -92,7 +93,7 @@ func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.service.Logout(r.Context(), request.RefreshToken); err != nil {
-		writeAuthError(w, err)
+		writeAuthError(w, r, err)
 		return
 	}
 
@@ -102,7 +103,7 @@ func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func writeAuthError(w http.ResponseWriter, err error) {
+func writeAuthError(w http.ResponseWriter, r *http.Request, err error) {
 	status := http.StatusInternalServerError
 	var rateLimitErr *RateLimitError
 	var rateLimitUnavailableErr *RateLimitUnavailableError
@@ -127,6 +128,6 @@ func writeAuthError(w http.ResponseWriter, err error) {
 		status = http.StatusConflict
 	}
 
-	slog.Error("authentication request failed", "error", err)
+	slog.ErrorContext(r.Context(), "authentication request failed", logging.Error(err))
 	http.Error(w, http.StatusText(status), status)
 }

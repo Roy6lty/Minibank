@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/Roy6lty/minibank/internal/audit"
 	db "github.com/Roy6lty/minibank/internal/sqlc"
 	"github.com/jackc/pgx/v5"
 )
@@ -14,6 +15,8 @@ type Repositories struct {
 	Transfers       TransferRepository
 	TransferPosting TransferPostingRepository
 	Ledger          LedgerRepository
+	Transactions    TransactionRepository
+	Audit           audit.Recorder
 	Users           UserRepository
 	RefreshTokens   RefreshTokenRepository
 }
@@ -50,12 +53,15 @@ func (u *unitOfWork) WithinTx(
 
 	queries := db.New(tx)
 	transferRepo := NewTransferRepository(queries)
+	auditRepo := NewAuditRepository(queries)
 	repos := Repositories{
 		Accounts:        NewAccountRepository(queries),
 		Customers:       NewCustomerRepository(queries),
 		Transfers:       transferRepo,
 		TransferPosting: transferRepo,
 		Ledger:          NewLedgerRepository(queries),
+		Transactions:    NewTransactionRepository(queries),
+		Audit:           audit.NewRecorder(auditRepo),
 		Users:           NewUserRepository(queries),
 		RefreshTokens:   NewRefreshTokenRepository(queries),
 	}

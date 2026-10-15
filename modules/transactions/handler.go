@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/Roy6lty/minibank/internal/httpx"
+	"github.com/Roy6lty/minibank/internal/logging"
 	db "github.com/Roy6lty/minibank/internal/sqlc"
 	appModels "github.com/Roy6lty/minibank/models"
 	"github.com/go-chi/chi/v5"
@@ -38,7 +39,7 @@ func (h *TransactionHandler) CreateTransaction(
 	}
 
 	if err := h.service.CreateTransaction(r.Context(), request); err != nil {
-		writeTransactionError(w, err)
+		writeTransactionError(w, r, err)
 		return
 	}
 
@@ -57,7 +58,7 @@ func (h *TransactionHandler) GetTransactionByID(
 		ID: &id,
 	})
 	if err != nil {
-		writeTransactionError(w, err)
+		writeTransactionError(w, r, err)
 		return
 	}
 
@@ -78,7 +79,7 @@ func (h *TransactionHandler) UpdateTransaction(
 
 	id := chi.URLParam(r, "transactionID")
 	if err := h.service.UpdateTransaction(r.Context(), id, request); err != nil {
-		writeTransactionError(w, err)
+		writeTransactionError(w, r, err)
 		return
 	}
 
@@ -87,7 +88,7 @@ func (h *TransactionHandler) UpdateTransaction(
 	})
 }
 
-func writeTransactionError(w http.ResponseWriter, err error) {
+func writeTransactionError(w http.ResponseWriter, r *http.Request, err error) {
 	status := http.StatusInternalServerError
 	if strings.Contains(err.Error(), "not found") {
 		status = http.StatusNotFound
@@ -96,6 +97,6 @@ func writeTransactionError(w http.ResponseWriter, err error) {
 		status = http.StatusBadRequest
 	}
 
-	slog.Error("transaction request failed", "error", err)
+	slog.ErrorContext(r.Context(), "transaction request failed", logging.Error(err))
 	http.Error(w, http.StatusText(status), status)
 }

@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/Roy6lty/minibank/database/repository"
+	"github.com/Roy6lty/minibank/internal/audit"
 	db "github.com/Roy6lty/minibank/internal/sqlc"
 	accountModels "github.com/Roy6lty/minibank/modules/account"
 	accountService "github.com/Roy6lty/minibank/modules/account/services"
@@ -170,6 +171,8 @@ func (t *transferService) CreateTransfer(
 			transactionAccounts,
 			repos.TransferPosting,
 			repos.Ledger,
+			repos.Transactions,
+			repos.Audit,
 		)
 		_, err = transactionLedger.CreateAndPostTransfer(ctx, db.CreateTransferParams{
 			Reference:            request.IdempotencyKey,
@@ -363,24 +366,50 @@ func (t *transferService) UpdateTransfers(
 		return fmt.Errorf("invalid transfer status transition")
 	}
 
-	_, err = t.transfers.UpdateTransfers(
-		ctx,
-		pgtype.UUID{
-			Bytes: transferUID,
-			Valid: true,
-		},
-		transfer.Status,
-		string(request.Status),
-	)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return fmt.Errorf("transfer update conflict")
+	err = t.uow.WithinTx(ctx, func(repos repository.Repositories) error {
+		_, err := repos.Transfers.UpdateTransfers(
+			ctx,
+			pgtype.UUID{
+				Bytes: transferUID,
+				Valid: true,
+			},
+			transfer.Status,
+			string(request.Status),
+		)
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return fmt.Errorf("transfer update conflict")
+			}
+
+			return fmt.Errorf("update transfer: %w", err)
 		}
 
-		return fmt.Errorf("update transfer: %w", err)
+		if err := recordAudit(ctx, repos.Audit, audit.Event{
+			EventType:    audit.EventTransferStatusUpdated,
+			Outcome:      audit.OutcomeSuccess,
+			ActorUserID:  principal.UserID,
+			RequestID:    audit.RequestID(ctx),
+			ResourceType: audit.ResourceTransfer,
+			ResourceID:   transferUID,
+			Details:      audit.StatusDetails(string(request.Status)),
+		}); err != nil {
+			return fmt.Errorf("record transfer status update: %w", err)
+		}
+
+		return nil
+	})
+	if err != nil {
+		return err
 	}
 
 	return nil
+}
+
+func recordAudit(ctx context.Context, recorder audit.Recorder, event audit.Event) error {
+	if recorder == nil {
+		return nil
+	}
+	return recorder.Record(ctx, event)
 }
 
 func validTransferStatus(status models.TransferStatus) bool {

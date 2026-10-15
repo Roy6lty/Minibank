@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/Roy6lty/minibank/internal/httpx"
+	"github.com/Roy6lty/minibank/internal/logging"
 	db "github.com/Roy6lty/minibank/internal/sqlc"
 	appModels "github.com/Roy6lty/minibank/models"
 	authModels "github.com/Roy6lty/minibank/modules/auth"
@@ -40,7 +41,7 @@ func (h *CustomerHandler) CreateCustomer(w http.ResponseWriter, r *http.Request)
 	}
 
 	if err := h.service.CreateCustomer(r.Context(), principal, request); err != nil {
-		writeCustomerError(w, err)
+		writeCustomerError(w, r, err)
 		return
 	}
 
@@ -60,7 +61,7 @@ func (h *CustomerHandler) GetCustomerByID(w http.ResponseWriter, r *http.Request
 		ID: &id,
 	})
 	if err != nil {
-		writeCustomerError(w, err)
+		writeCustomerError(w, r, err)
 		return
 	}
 
@@ -90,7 +91,7 @@ func (h *CustomerHandler) GetCustomerByName(w http.ResponseWriter, r *http.Reque
 
 	customers, err := h.service.GetCustomerByName(r.Context(), principal, request)
 	if err != nil {
-		writeCustomerError(w, err)
+		writeCustomerError(w, r, err)
 		return
 	}
 
@@ -113,7 +114,7 @@ func (h *CustomerHandler) UpdateCustomer(w http.ResponseWriter, r *http.Request)
 
 	id := chi.URLParam(r, "customerID")
 	if err := h.service.UpdateCustomer(r.Context(), principal, id, request); err != nil {
-		writeCustomerError(w, err)
+		writeCustomerError(w, r, err)
 		return
 	}
 
@@ -123,7 +124,7 @@ func (h *CustomerHandler) UpdateCustomer(w http.ResponseWriter, r *http.Request)
 	})
 }
 
-func writeCustomerError(w http.ResponseWriter, err error) {
+func writeCustomerError(w http.ResponseWriter, r *http.Request, err error) {
 	status := http.StatusInternalServerError
 	if errors.Is(err, authModels.ErrForbidden) {
 		status = http.StatusForbidden
@@ -134,7 +135,7 @@ func writeCustomerError(w http.ResponseWriter, err error) {
 		status = http.StatusBadRequest
 	}
 
-	slog.Error("customer request failed", "error", err)
+	slog.ErrorContext(r.Context(), "customer request failed", logging.Error(err))
 	http.Error(w, http.StatusText(status), status)
 }
 

@@ -13,10 +13,10 @@ const (
 )
 
 type CreateTransferRequest struct {
-	IdempotencyKey        string `json:"idempotency_key"`
-	SenderAccountNumber   string `json:"sender_account_number"`
-	RecieverAccountNumber string `json:"reciever_account_number"`
-	Amount                int64  `json:"amount"`
+	IdempotencyKey        string `json:"idempotency_key" validate:"required,max=100"`
+	SenderAccountNumber   string `json:"sender_account_number" validate:"required,len=10,numeric"`
+	RecieverAccountNumber string `json:"reciever_account_number" validate:"required,len=10,numeric"`
+	Amount                int64  `json:"amount" validate:"gt=0"`
 }
 
 type GetTransferDetailsRequest struct {
@@ -34,5 +34,5 @@ type TransferRequestResponse struct {
 }
 
 type UpdateTransferRequest struct {
-	Status TransferStatus `json:"status"`
+	Status TransferStatus `json:"status" validate:"required,oneof=PENDING PROCESSING COMPLETED FAILED REVERSED"`
 }

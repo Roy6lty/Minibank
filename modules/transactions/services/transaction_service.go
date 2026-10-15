@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/Roy6lty/minibank/database/repository"
+	"github.com/Roy6lty/minibank/internal/audit"
 	db "github.com/Roy6lty/minibank/internal/sqlc"
 	models "github.com/Roy6lty/minibank/modules/transactions"
 	"github.com/google/uuid"
@@ -33,10 +34,14 @@ type TransactionService interface {
 
 type transactionService struct {
 	transactions repository.TransactionRepository
+	uow          repository.UnitOfWork
 }
 
-func NewTransactionService(transaction repository.TransactionRepository) TransactionService {
-	return &transactionService{transactions: transaction}
+func NewTransactionService(
+	transaction repository.TransactionRepository,
+	uow repository.UnitOfWork,
+) TransactionService {
+	return &transactionService{transactions: transaction, uow: uow}
 }
 
 func validStatus(status string) bool {
@@ -62,6 +67,9 @@ func (t *transactionService) CreateTransaction(
 	if args.Type == "" {
 		return fmt.Errorf("transaction type is required")
 	}
+	if args.Type == models.TransactionTypeTransfer {
+		return fmt.Errorf("transfer transactions are created with a transfer")
+	}
 	if args.Amount <= 0 {
 		return fmt.Errorf("transaction amount must be greater than zero")
 	}
@@ -77,19 +85,38 @@ func (t *transactionService) CreateTransaction(
 		return fmt.Errorf("invalid transaction status")
 	}
 
-	_, err := t.transactions.Create(ctx, db.CreateTransactionParams{
-		Reference:       args.Reference,
-		TransactionType: args.Type,
-		Status:          status,
-		Amount:          args.Amount,
-		Currency:        args.Currency,
-		Description: pgtype.Text{
-			String: args.Description,
-			Valid:  args.Description != "",
-		},
+	err := t.uow.WithinTx(ctx, func(repos repository.Repositories) error {
+		transaction, err := repos.Transactions.Create(ctx, db.CreateTransactionParams{
+			Reference:       args.Reference,
+			TransactionType: args.Type,
+			Status:          status,
+			Amount:          args.Amount,
+			Currency:        args.Currency,
+			Description: pgtype.Text{
+				String: args.Description,
+				Valid:  args.Description != "",
+			},
+		})
+		if err != nil {
+			return fmt.Errorf("create transaction: %w", err)
+		}
+
+		actorUserID, _ := audit.ActorUserID(ctx)
+		if err := recordAudit(ctx, repos.Audit, audit.Event{
+			EventType:    audit.EventTransactionCreated,
+			Outcome:      audit.OutcomeSuccess,
+			ActorUserID:  actorUserID,
+			RequestID:    audit.RequestID(ctx),
+			ResourceType: audit.ResourceTransaction,
+			ResourceID:   uuid.UUID(transaction.ID.Bytes),
+		}); err != nil {
+			return fmt.Errorf("record transaction creation: %w", err)
+		}
+
+		return nil
 	})
 	if err != nil {
-		return fmt.Errorf("create transaction: %w", err)
+		return err
 	}
 
 	return nil
@@ -139,16 +166,43 @@ func (t *transactionService) UpdateTransaction(
 		return fmt.Errorf("invalid transaction ID: %w", err)
 	}
 
-	_, err = t.transactions.UpdateTransactionStatus(ctx, pgtype.UUID{
-		Bytes: transactionID,
-		Valid: true,
-	}, string(*request.Status))
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return fmt.Errorf("transaction not found")
+	err = t.uow.WithinTx(ctx, func(repos repository.Repositories) error {
+		_, err := repos.Transactions.UpdateTransactionStatus(ctx, pgtype.UUID{
+			Bytes: transactionID,
+			Valid: true,
+		}, string(*request.Status))
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return fmt.Errorf("transaction not found")
+			}
+			return fmt.Errorf("update transaction: %w", err)
 		}
-		return fmt.Errorf("update transaction: %w", err)
+
+		actorUserID, _ := audit.ActorUserID(ctx)
+		if err := recordAudit(ctx, repos.Audit, audit.Event{
+			EventType:    audit.EventTransactionStatusUpdated,
+			Outcome:      audit.OutcomeSuccess,
+			ActorUserID:  actorUserID,
+			RequestID:    audit.RequestID(ctx),
+			ResourceType: audit.ResourceTransaction,
+			ResourceID:   transactionID,
+			Details:      audit.StatusDetails(string(*request.Status)),
+		}); err != nil {
+			return fmt.Errorf("record transaction status update: %w", err)
+		}
+
+		return nil
+	})
+	if err != nil {
+		return err
 	}
 
 	return nil
+}
+
+func recordAudit(ctx context.Context, recorder audit.Recorder, event audit.Event) error {
+	if recorder == nil {
+		return nil
+	}
+	return recorder.Record(ctx, event)
 }

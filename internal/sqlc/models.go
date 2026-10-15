@@ -32,6 +32,18 @@ type AccountProduct struct {
 	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
 }
 
+type AuditEvent struct {
+	ID           pgtype.UUID        `json:"id"`
+	OccurredAt   pgtype.Timestamptz `json:"occurred_at"`
+	EventType    string             `json:"event_type"`
+	Outcome      string             `json:"outcome"`
+	ActorUserID  pgtype.UUID        `json:"actor_user_id"`
+	RequestID    pgtype.Text        `json:"request_id"`
+	ResourceType pgtype.Text        `json:"resource_type"`
+	ResourceID   pgtype.UUID        `json:"resource_id"`
+	Details      []byte             `json:"details"`
+}
+
 type Customer struct {
 	ID        pgtype.UUID        `json:"id"`
 	FirstName string             `json:"first_name"`
@@ -50,6 +62,20 @@ type LedgerEntry struct {
 	Amount     int64              `json:"amount"`
 	Currency   string             `json:"currency"`
 	CreatedAt  pgtype.Timestamptz `json:"created_at"`
+}
+
+type ReconciliationMismatch struct {
+	ID              pgtype.UUID        `json:"id"`
+	MismatchKey     string             `json:"mismatch_key"`
+	MismatchType    string             `json:"mismatch_type"`
+	AccountID       pgtype.UUID        `json:"account_id"`
+	TransferID      pgtype.UUID        `json:"transfer_id"`
+	ExpectedAmount  pgtype.Int8        `json:"expected_amount"`
+	ActualAmount    pgtype.Int8        `json:"actual_amount"`
+	Details         string             `json:"details"`
+	FirstDetectedAt pgtype.Timestamptz `json:"first_detected_at"`
+	LastDetectedAt  pgtype.Timestamptz `json:"last_detected_at"`
+	ResolvedAt      pgtype.Timestamptz `json:"resolved_at"`
 }
 
 type RefreshToken struct {
@@ -71,6 +97,7 @@ type Transaction struct {
 	Description     pgtype.Text        `json:"description"`
 	CreatedAt       pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+	TransferID      pgtype.UUID        `json:"transfer_id"`
 }
 
 type Transfer struct {

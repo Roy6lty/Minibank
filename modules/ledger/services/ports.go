@@ -31,3 +31,8 @@ type LedgerPort interface {
 	GetByTransferID(context.Context, pgtype.UUID) ([]db.LedgerEntry, error)
 	GetByAccountID(context.Context, pgtype.UUID, int32, int32) ([]db.LedgerEntry, error)
 }
+
+type TransactionPort interface {
+	Create(context.Context, db.CreateTransactionParams) (db.Transaction, error)
+	UpdateTransactionStatus(context.Context, pgtype.UUID, string) (db.Transaction, error)
+}

@@ -14,6 +14,7 @@ import (
 const createTransaction = `-- name: CreateTransaction :one
 
 INSERT INTO transactions (
+    transfer_id,
     reference,
     transaction_type,
     status,
@@ -27,12 +28,14 @@ VALUES (
     $3,
     $4,
     $5,
-    $6
+    $6,
+    $7
 )
-RETURNING id, reference, transaction_type, amount, currency, status, description, created_at, updated_at
+RETURNING id, reference, transaction_type, amount, currency, status, description, created_at, updated_at, transfer_id
 `
 
 type CreateTransactionParams struct {
+	TransferID      pgtype.UUID `json:"transfer_id"`
 	Reference       string      `json:"reference"`
 	TransactionType string      `json:"transaction_type"`
 	Status          string      `json:"status"`
@@ -44,6 +47,7 @@ type CreateTransactionParams struct {
 // db/query/transaction.sql
 func (q *Queries) CreateTransaction(ctx context.Context, arg CreateTransactionParams) (Transaction, error) {
 	row := q.db.QueryRow(ctx, createTransaction,
+		arg.TransferID,
 		arg.Reference,
 		arg.TransactionType,
 		arg.Status,
@@ -62,12 +66,13 @@ func (q *Queries) CreateTransaction(ctx context.Context, arg CreateTransactionPa
 		&i.Description,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.TransferID,
 	)
 	return i, err
 }
 
 const getTransaction = `-- name: GetTransaction :one
-SELECT id, reference, transaction_type, amount, currency, status, description, created_at, updated_at
+SELECT id, reference, transaction_type, amount, currency, status, description, created_at, updated_at, transfer_id
 FROM transactions
 WHERE id = $1
 LIMIT 1
@@ -86,12 +91,13 @@ func (q *Queries) GetTransaction(ctx context.Context, id pgtype.UUID) (Transacti
 		&i.Description,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.TransferID,
 	)
 	return i, err
 }
 
 const getTransactionByReference = `-- name: GetTransactionByReference :one
-SELECT id, reference, transaction_type, amount, currency, status, description, created_at, updated_at
+SELECT id, reference, transaction_type, amount, currency, status, description, created_at, updated_at, transfer_id
 FROM transactions
 WHERE reference = $1
 LIMIT 1
@@ -110,12 +116,13 @@ func (q *Queries) GetTransactionByReference(ctx context.Context, reference strin
 		&i.Description,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.TransferID,
 	)
 	return i, err
 }
 
 const getTransactions = `-- name: GetTransactions :many
-SELECT id, reference, transaction_type, amount, currency, status, description, created_at, updated_at
+SELECT id, reference, transaction_type, amount, currency, status, description, created_at, updated_at, transfer_id
 FROM transactions
 ORDER BY created_at DESC
 LIMIT $1
@@ -146,6 +153,7 @@ func (q *Queries) GetTransactions(ctx context.Context, arg GetTransactionsParams
 			&i.Description,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.TransferID,
 		); err != nil {
 			return nil, err
 		}
@@ -158,7 +166,7 @@ func (q *Queries) GetTransactions(ctx context.Context, arg GetTransactionsParams
 }
 
 const getTransactionsByStatus = `-- name: GetTransactionsByStatus :many
-SELECT id, reference, transaction_type, amount, currency, status, description, created_at, updated_at
+SELECT id, reference, transaction_type, amount, currency, status, description, created_at, updated_at, transfer_id
 FROM transactions
 WHERE status = $1
 ORDER BY created_at DESC
@@ -191,6 +199,7 @@ func (q *Queries) GetTransactionsByStatus(ctx context.Context, arg GetTransactio
 			&i.Description,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.TransferID,
 		); err != nil {
 			return nil, err
 		}
@@ -203,7 +212,7 @@ func (q *Queries) GetTransactionsByStatus(ctx context.Context, arg GetTransactio
 }
 
 const getTransactionsByType = `-- name: GetTransactionsByType :many
-SELECT id, reference, transaction_type, amount, currency, status, description, created_at, updated_at
+SELECT id, reference, transaction_type, amount, currency, status, description, created_at, updated_at, transfer_id
 FROM transactions
 WHERE transaction_type = $1
 ORDER BY created_at DESC
@@ -236,6 +245,7 @@ func (q *Queries) GetTransactionsByType(ctx context.Context, arg GetTransactions
 			&i.Description,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.TransferID,
 		); err != nil {
 			return nil, err
 		}
@@ -253,7 +263,7 @@ SET
     status = $2,
     updated_at = NOW()
 WHERE id = $1
-RETURNING id, reference, transaction_type, amount, currency, status, description, created_at, updated_at
+RETURNING id, reference, transaction_type, amount, currency, status, description, created_at, updated_at, transfer_id
 `
 
 type UpdateTransactionStatusParams struct {
@@ -274,6 +284,7 @@ func (q *Queries) UpdateTransactionStatus(ctx context.Context, arg UpdateTransac
 		&i.Description,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.TransferID,
 	)
 	return i, err
 }
